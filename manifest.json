@@ -1,0 +1,65 @@
+{
+    "manifest_version": 3,
+    "name": "Form Assistant",
+    "version": "1.0.0",
+    "description": "AI-powered Chrome extension to automatically fill web forms and extract data from tables using natural language prompts",
+    
+    "permissions": [
+      "activeTab",
+      "tabs",
+      "storage",
+      "scripting",
+      "host_permissions"
+    ],
+    
+    "host_permissions": [
+      "*://*/*"
+    ],
+    
+    "background": {
+      "service_worker": "background.js",
+      "type": "module"
+    },
+    
+    "content_scripts": [
+      {
+        "matches": ["*://*/*"],
+        "js": ["content.js"],
+        "run_at": "document_idle",
+        "all_frames": false
+      }
+    ],
+    
+    "action": {
+      "default_popup": "popup.html",
+      "default_title": "Form Assistant",
+      "default_icon": {
+        "16": "images/icon16.png",
+        "48": "images/icon48.png",
+        "128": "images/icon128.png"
+      }
+    },
+    
+    "icons": {
+      "16": "images/icon16.png",
+      "48": "images/icon48.png",
+      "128": "images/icon128.png"
+    },
+    
+    "web_accessible_resources": [
+      {
+        "resources": ["content.js"],
+        "matches": ["*://*/*"]
+      }
+    ],
+    
+    "content_security_policy": {
+      "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.groq.com;"
+    },
+    
+    "externally_connectable": {
+      "matches": ["*://*/*"]
+    },
+    
+    "minimum_chrome_version": "88"
+  }
