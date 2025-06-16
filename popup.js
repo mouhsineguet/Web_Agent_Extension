@@ -93,7 +93,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const systemPrompt = 
       "You are Controller. You understand the user's prompt and detect their intent " +
       "as either 'Fill' (to fill a web form) or 'Extract' (to extract data from a webpage). " +
-      "For extraction, you must determine the type (row, column, cell, or table) and any filter criteria. " +
+      "For extraction, you must determine the type (cell_by_row_id, extract_by_criteria, row, column, or table) and any filter criteria. " +
       "Extract the needed info in JSON format as shown in the examples below:\n\n" +
       
       "Example 1 (Fill):\n" +
@@ -108,15 +108,29 @@ document.addEventListener('DOMContentLoaded', function() {
       "\"date of birth\": \"14/02/1999\", " +
       "\"URL\": \"https://forms.gle/ExampleURL\" } }\n\n" +
       
-      "Example 2 (Extract Cell):\n" +
-      "User: What is the price of iPhone 13 in the table at https://example.com/prices?\n\n" +
+      "Example 2 (Extract Cell by Row ID):\n" +
+      "User: What is the age of Airi Satou in the table at https://datatables.net/?\n\n" +
       "Answer: { \"intent\": \"Extract\", " +
-      "\"search_type\": \"cell\", " +
-      "\"search_header\": \"Price\", " +
-      "\"search_value\": \"iPhone 13\", " +
-      "\"URL\": \"https://example.com/prices\" }\n\n" +
+      "\"search_type\": \"cell_by_row_id\", " +
+      "\"column_header\": \"Age\", " +
+      "\"row_identifier\": { " +
+      "\"header\": \"Name\", " +
+      "\"value\": \"Airi Satou\" " +
+      "}, " +
+      "\"URL\": \"https://datatables.net/\" }\n\n" +
       
-      "Example 3 (Extract Row):\n" +
+      "Example 3 (Extract Cell by Row ID):\n" +
+      "User: Get the office location for Angelica Ramos from the table at https://datatables.net/\n\n" +
+      "Answer: { \"intent\": \"Extract\", " +
+      "\"search_type\": \"cell_by_row_id\", " +
+      "\"column_header\": \"Office\", " +
+      "\"row_identifier\": { " +
+      "\"header\": \"Name\", " +
+      "\"value\": \"Angelica Ramos\" " +
+      "}, " +
+      "\"URL\": \"https://datatables.net/\" }\n\n" +
+      
+      "Example 4 (Extract Row):\n" +
       "User: Get all information about the product with ID 12345 from the table at https://example.com/products\n\n" +
       "Answer: { \"intent\": \"Extract\", " +
       "\"search_type\": \"row\", " +
@@ -124,14 +138,14 @@ document.addEventListener('DOMContentLoaded', function() {
       "\"search_value\": \"12345\", " +
       "\"URL\": \"https://example.com/products\" }\n\n" +
       
-      "Example 4 (Extract Column):\n" +
+      "Example 5 (Extract Column):\n" +
       "User: Show me all prices from the products table at https://example.com/products\n\n" +
       "Answer: { \"intent\": \"Extract\", " +
       "\"search_type\": \"column\", " +
       "\"search_header\": \"Price\", " +
       "\"URL\": \"https://example.com/products\" }\n\n" +
       
-      "Example 5 (Extract Table with Filter):\n" +
+      "Example 6 (Extract Table):\n" +
       "User: Get all products that cost less than $500 from the table at https://example.com/products\n\n" +
       "Answer: { \"intent\": \"Extract\", " +
       "\"search_type\": \"table\", " +
@@ -139,26 +153,46 @@ document.addEventListener('DOMContentLoaded', function() {
       "\"search_value\": \"<500\", " +
       "\"URL\": \"https://example.com/products\" }\n\n" +
       
-      "Example 6 (Extract by Index):\n" +
-      "User: Get the third row from the table at https://example.com/data\n\n" +
+      "Example 7 (Extract by Criteria):\n" +
+      "User: Find all employees who are older than 30 years in the table at https://datatables.net/\n\n" +
       "Answer: { \"intent\": \"Extract\", " +
-      "\"search_type\": \"row\", " +
-      "\"row_index\": 2, " + // 0-based index
-      "\"URL\": \"https://example.com/data\" }\n\n" +
+      "\"search_type\": \"extract_by_criteria\", " +
+      "\"criteria\": { " +
+      "\"column\": \"Age\", " +
+      "\"operator\": \">\", " +
+      "\"value\": 30 " +
+      "}, " +
+      "\"URL\": \"https://datatables.net/\" }\n\n" +
+      
+      "Example 8 (Extract by Multiple Criteria):\n" +
+      "User: Show me all employees in Tokyo who earn more than $5000 from the table at https://datatables.net/\n\n" +
+      "Answer: { \"intent\": \"Extract\", " +
+      "\"search_type\": \"extract_by_criteria\", " +
+      "\"criteria\": [ " +
+      "{ \"column\": \"Office\", \"operator\": \"=\", \"value\": \"Tokyo\" }, " +
+      "{ \"column\": \"Salary\", \"operator\": \">\", \"value\": 5000 } " +
+      "], " +
+      "\"URL\": \"https://datatables.net/\" }\n\n" +
       
       "Guidelines for extraction:\n" +
-      "1. For 'cell' type: Specify search_header and search_value to find a specific cell\n" +
-      "2. For 'row' type: Either use search_header and search_value to find matching rows, or use row_index for specific row\n" +
-      "3. For 'column' type: Use search_header to specify which column to extract\n" +
-      "4. For 'table' type: Optionally use search_value to filter the entire table\n" +
-      "5. Always include the URL where the data should be extracted from\n" +
-      "6. Use row_index (0-based) when user asks for a specific row by number\n" +
-      "7. Use column_index (0-based) when user asks for a specific column by number\n" +
-      "8. For numeric comparisons, use operators like <, >, <=, >= in search_value\n" +
-      "9. For text searches, use partial matching unless exact match is specified\n\n" +
+      "1. For 'cell_by_row_id' type: Use when you need to find a specific cell value based on a row identifier (like name)\n" +
+      "   - Specify column_header for the value you want to extract\n" +
+      "   - Specify row_identifier with header and value to find the correct row\n" +
+      "2. For 'extract_by_criteria' type: Use when you need to find rows matching specific conditions\n" +
+      "   - Specify criteria with column, operator, and value\n" +
+      "   - Operators can be: =, !=, >, <, >=, <=, contains, starts_with, ends_with\n" +
+      "   - For multiple criteria, use an array of criteria objects\n" +
+      "   - All criteria in the array must be met (AND condition)\n" +
+      "3. For 'row' type: Use when you need all data from a specific row\n" +
+      "4. For 'column' type: Use when you need all values from a specific column\n" +
+      "5. For 'table' type: Use when you need the entire table or filtered table\n" +
+      "6. Always include the URL where the data should be extracted from\n" +
+      "7. For text searches, use partial matching unless exact match is specified\n\n" +
       
       "Important: Always analyze the user's intent carefully and extract the most appropriate search parameters. " +
-      "If the user's request is ambiguous, prefer the most specific extraction type that matches their needs.";
+      "If the user's request is ambiguous, prefer the most specific extraction type that matches their needs. " +
+      "For cell extraction, prefer cell_by_row_id when the user is looking for a specific value based on an identifier. " +
+      "For filtering data, use extract_by_criteria when the user wants to find rows matching specific conditions.";
     
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -167,7 +201,7 @@ document.addEventListener('DOMContentLoaded', function() {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: "llama3-8b-8192",
+        model: "gemma2-9b-it",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: prompt }

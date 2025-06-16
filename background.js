@@ -84,7 +84,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
    * Handles data extraction intent
    */
   async function handleExtractIntent(data) {
-    const { URL, search_type, search_header = '', search_value = '', row_index, column_index } = data;
+    const { URL, search_type, search_header, search_value, row_index, column_index, 
+            column_header, row_identifier, criteria } = data;
     
     if (!URL) {
       throw new Error('Missing URL for data extraction');
@@ -100,14 +101,69 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       // Inject content script if needed
       await ensureContentScriptInjected(tab.id);
       
-      // Prepare search parameters
-      const searchParams = {
-        searchType: search_type,
-        searchHeader: search_header,
-        searchValue: search_value,
-        rowIndex: row_index,
-        columnIndex: column_index
+      // Prepare search parameters based on search type
+      let searchParams = {
+        searchType: search_type
       };
+      
+      // Add parameters based on search type
+      switch (search_type) {
+        case 'cell_by_row_id':
+          if (!column_header || !row_identifier) {
+            throw new Error('Missing required parameters for cell_by_row_id extraction');
+          }
+          searchParams = {
+            ...searchParams,
+            column_header,
+            row_identifier
+          };
+          break;
+          
+        case 'extract_by_criteria':
+          if (!criteria) {
+            throw new Error('Missing criteria for extract_by_criteria extraction');
+          }
+          searchParams = {
+            ...searchParams,
+            criteria
+          };
+          break;
+          
+        case 'cell':
+          searchParams = {
+            ...searchParams,
+            searchHeader: search_header,
+            searchValue: search_value
+          };
+          break;
+          
+        case 'row':
+          searchParams = {
+            ...searchParams,
+            searchHeader: search_header,
+            searchValue: search_value,
+            rowIndex: row_index
+          };
+          break;
+        case 'column':
+          searchParams = {
+            ...searchParams,
+            searchHeader: search_header,
+            columnIndex: column_index
+          };
+          break;
+        case 'table':
+          searchParams = {
+            ...searchParams,
+            searchHeader: search_header,
+            searchValue: search_value
+          };
+          break;
+        default:
+          throw new Error(`Unknown search type: ${search_type}`);
+      }
+      
+      console.log('Sending extraction request with params:', searchParams);
       
       // Send extract data message to content script
       const response = await chrome.tabs.sendMessage(tab.id, {
@@ -116,7 +172,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
       
       if (!response || !response.success) {
-        throw new Error('Failed to extract data');
+        throw new Error(response?.error || 'Failed to extract data');
       }
       
       console.log('Data extraction initiated successfully');
@@ -157,8 +213,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       
       if (apiKey) {
         try {
+          // Customize prompt based on extraction type
+          let promptPrefix = '';
+          if (extractedData.type === 'cell_by_row_id') {
+            promptPrefix = `Found ${extractedData.column} value for row where ${extractedData.rowIdentifier.column} = ${extractedData.rowIdentifier.value}.\n\n`;
+          }
+          
           // Use LLM to validate and enhance the extracted data
-          enhancedData = await enhanceDataWithLLM(extractedData, metadata, apiKey);
+          enhancedData = await enhanceDataWithLLM(extractedData, metadata, apiKey, promptPrefix);
         } catch (error) {
           console.warn('LLM enhancement failed:', error);
           // Continue without enhancement
@@ -188,9 +250,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   /**
    * Enhances extracted data using LLM analysis
    */
-  async function enhanceDataWithLLM(extractedData, metadata, apiKey) {
+  async function enhanceDataWithLLM(extractedData, metadata, apiKey, promptPrefix = '') {
     const prompt = `
-  Analyze the following extracted data and provide insights, validation, or enhancement:
+  ${promptPrefix}Analyze the following extracted data and provide insights, validation, or enhancement:
   
   Data Type: ${extractedData.type}
   Source: ${metadata.url}
