@@ -93,8 +93,18 @@ document.addEventListener('DOMContentLoaded', function() {
     const systemPrompt = 
       "You are Controller. You understand the user's prompt and detect their intent " +
       "as either 'Fill' (to fill a web form) or 'Extract' (to extract data from a webpage). " +
-      "For extraction, you must determine the type (cell_by_row_id, extract_by_criteria, row, column, or table) and any filter criteria. " +
+      "For extraction, you must determine the type and any filter criteria. " +
       "Extract the needed info in JSON format as shown in the examples below:\n\n" +
+      
+      "Available extraction types:\n" +
+      "- cell: Extract a single cell value\n" +
+      "- cell_by_row_id: Extract a cell value based on row identifier\n" +
+      "- row: Extract an entire row\n" +
+      "- column: Extract an entire column\n" +
+      "- table: Extract entire table or filtered table\n" +
+      "- extract_by_criteria: Extract rows matching specific criteria\n" +
+      "- list: Extract a list of values from a column\n" +
+      "- search: General search across multiple columns\n\n" +
       
       "Example 1 (Fill):\n" +
       "User: Hi! My name is Richard Guallam born on 14/02/1999, my phone is +3468417884, " +
@@ -108,7 +118,15 @@ document.addEventListener('DOMContentLoaded', function() {
       "\"date of birth\": \"14/02/1999\", " +
       "\"URL\": \"https://forms.gle/ExampleURL\" } }\n\n" +
       
-      "Example 2 (Extract Cell by Row ID):\n" +
+      "Example 2 (Extract Cell):\n" +
+      "User: What is the price of the first product in the table at https://example.com/products?\n\n" +
+      "Answer: { \"intent\": \"Extract\", " +
+      "\"search_type\": \"cell\", " +
+      "\"searchHeader\": \"Price\", " +
+      "\"rowIndex\": 0, " +
+      "\"URL\": \"https://example.com/products\" }\n\n" +
+      
+      "Example 3 (Extract Cell by Row ID):\n" +
       "User: What is the age of Airi Satou in the table at https://datatables.net/?\n\n" +
       "Answer: { \"intent\": \"Extract\", " +
       "\"search_type\": \"cell_by_row_id\", " +
@@ -116,17 +134,6 @@ document.addEventListener('DOMContentLoaded', function() {
       "\"row_identifier\": { " +
       "\"header\": \"Name\", " +
       "\"value\": \"Airi Satou\" " +
-      "}, " +
-      "\"URL\": \"https://datatables.net/\" }\n\n" +
-      
-      "Example 3 (Extract Cell by Row ID):\n" +
-      "User: Get the office location for Angelica Ramos from the table at https://datatables.net/\n\n" +
-      "Answer: { \"intent\": \"Extract\", " +
-      "\"search_type\": \"cell_by_row_id\", " +
-      "\"column_header\": \"Office\", " +
-      "\"row_identifier\": { " +
-      "\"header\": \"Name\", " +
-      "\"value\": \"Angelica Ramos\" " +
       "}, " +
       "\"URL\": \"https://datatables.net/\" }\n\n" +
       
@@ -142,15 +149,13 @@ document.addEventListener('DOMContentLoaded', function() {
       "User: Show me all prices from the products table at https://example.com/products\n\n" +
       "Answer: { \"intent\": \"Extract\", " +
       "\"search_type\": \"column\", " +
-      "\"search_header\": \"Price\", " +
+      "\"searchHeader\": \"Price\", " +
       "\"URL\": \"https://example.com/products\" }\n\n" +
       
       "Example 6 (Extract Table):\n" +
-      "User: Get all products that cost less than $500 from the table at https://example.com/products\n\n" +
+      "User: Get all products from the table at https://example.com/products\n\n" +
       "Answer: { \"intent\": \"Extract\", " +
       "\"search_type\": \"table\", " +
-      "\"search_header\": \"Price\", " +
-      "\"search_value\": \"<500\", " +
       "\"URL\": \"https://example.com/products\" }\n\n" +
       
       "Example 7 (Extract by Criteria):\n" +
@@ -174,25 +179,63 @@ document.addEventListener('DOMContentLoaded', function() {
       "], " +
       "\"URL\": \"https://datatables.net/\" }\n\n" +
       
+      "Example 9 (Extract List):\n" +
+      "User: Get a list of all product names from the table at https://example.com/products\n\n" +
+      "Answer: { \"intent\": \"Extract\", " +
+      "\"search_type\": \"list\", " +
+      "\"column\": \"Name\", " +
+      "\"URL\": \"https://example.com/products\" }\n\n" +
+      
+      "Example 10 (Extract List with Filter):\n" +
+      "User: Get all product names that contain 'phone' from the table at https://example.com/products\n\n" +
+      "Answer: { \"intent\": \"Extract\", " +
+      "\"search_type\": \"list\", " +
+      "\"column\": \"Name\", " +
+      "\"filter\": \"phone\", " +
+      "\"URL\": \"https://example.com/products\" }\n\n" +
+      
+      "Example 11 (Search):\n" +
+      "User: Search for anything related to 'laptop' in the table at https://example.com/products\n\n" +
+      "Answer: { \"intent\": \"Extract\", " +
+      "\"search_type\": \"search\", " +
+      "\"searchTerm\": \"laptop\", " +
+      "\"URL\": \"https://example.com/products\" }\n\n" +
+      
       "Guidelines for extraction:\n" +
-      "1. For 'cell_by_row_id' type: Use when you need to find a specific cell value based on a row identifier (like name)\n" +
+      "1. For 'cell' type: Use when you need a specific cell value by column and row\n" +
+      "   - Use searchHeader for column name and searchValue for row identifier\n" +
+      "   - Or use rowIndex and columnIndex for direct access\n" +
+      "2. For 'cell_by_row_id' type: Use when you need to find a specific cell value based on a row identifier\n" +
       "   - Specify column_header for the value you want to extract\n" +
       "   - Specify row_identifier with header and value to find the correct row\n" +
-      "2. For 'extract_by_criteria' type: Use when you need to find rows matching specific conditions\n" +
-      "   - Specify criteria with column, operator, and value\n" +
-      "   - Operators can be: =, !=, >, <, >=, <=, contains, starts_with, ends_with\n" +
-      "   - For multiple criteria, use an array of criteria objects\n" +
-      "   - All criteria in the array must be met (AND condition)\n" +
       "3. For 'row' type: Use when you need all data from a specific row\n" +
+      "   - Use searchHeader and searchValue to find the row\n" +
+      "   - Or use rowIndex for direct access\n" +
       "4. For 'column' type: Use when you need all values from a specific column\n" +
+      "   - Use searchHeader for column name\n" +
       "5. For 'table' type: Use when you need the entire table or filtered table\n" +
-      "6. Always include the URL where the data should be extracted from\n" +
-      "7. For text searches, use partial matching unless exact match is specified\n\n" +
+      "   - Use searchValue to filter rows containing specific text\n" +
+      "   - Use limit to restrict number of rows\n" +
+      "6. For 'extract_by_criteria' type: Use when you need to find rows matching specific conditions\n" +
+      "   - Specify criteria with column, operator, and value\n" +
+      "   - Operators can be: =, !=, >, <, >=, <=, contains, starts_with, ends_with, regex\n" +
+      "   - For multiple criteria, use an array of criteria objects (AND condition)\n" +
+      "7. For 'list' type: Use when you need a list of values from a column\n" +
+      "   - Use column to specify which column\n" +
+      "   - Use filter to search within the list\n" +
+      "   - Use sort: 'asc' or 'desc' for sorting\n" +
+      "   - Use limit to restrict number of items\n" +
+      "8. For 'search' type: Use for general search across multiple columns\n" +
+      "   - Use searchTerm for the search query\n" +
+      "   - Use columns array to specify which columns to search\n" +
+      "   - Use caseSensitive: true/false for case sensitivity\n" +
+      "9. Always include the URL where the data should be extracted from\n" +
+      "10. For text searches, use partial matching unless exact match is specified\n\n" +
       
       "Important: Always analyze the user's intent carefully and extract the most appropriate search parameters. " +
       "If the user's request is ambiguous, prefer the most specific extraction type that matches their needs. " +
-      "For cell extraction, prefer cell_by_row_id when the user is looking for a specific value based on an identifier. " +
-      "For filtering data, use extract_by_criteria when the user wants to find rows matching specific conditions.";
+      "For simple cell extraction, use 'cell' type. For cell extraction based on row identifier, use 'cell_by_row_id'. " +
+      "For filtering data, use 'extract_by_criteria'. For lists of values, use 'list'. For general search, use 'search'.";
     
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',

@@ -84,8 +84,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
    * Handles data extraction intent
    */
   async function handleExtractIntent(data) {
-    const { URL, search_type, search_header, search_value, row_index, column_index, 
-            column_header, row_identifier, criteria } = data;
+    const { URL, search_type, searchHeader, searchValue, rowIndex, columnIndex, 
+            column_header, row_identifier, criteria, column, filter, sort, limit,
+            searchTerm, columns, caseSensitive } = data;
     
     if (!URL) {
       throw new Error('Missing URL for data extraction');
@@ -108,6 +109,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       
       // Add parameters based on search type
       switch (search_type) {
+        case 'cell':
+          searchParams = {
+            ...searchParams,
+            searchHeader,
+            searchValue,
+            rowIndex,
+            columnIndex
+          };
+          break;
+          
         case 'cell_by_row_id':
           if (!column_header || !row_identifier) {
             throw new Error('Missing required parameters for cell_by_row_id extraction');
@@ -116,6 +127,31 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             ...searchParams,
             column_header,
             row_identifier
+          };
+          break;
+          
+        case 'row':
+          searchParams = {
+            ...searchParams,
+            searchHeader,
+            searchValue,
+            rowIndex
+          };
+          break;
+          
+        case 'column':
+          searchParams = {
+            ...searchParams,
+            searchHeader,
+            columnIndex
+          };
+          break;
+          
+        case 'table':
+          searchParams = {
+            ...searchParams,
+            searchValue,
+            limit
           };
           break;
           
@@ -129,36 +165,28 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           };
           break;
           
-        case 'cell':
+        case 'list':
           searchParams = {
             ...searchParams,
-            searchHeader: search_header,
-            searchValue: search_value
+            column,
+            filter,
+            sort,
+            limit
           };
           break;
           
-        case 'row':
+        case 'search':
+          if (!searchTerm) {
+            throw new Error('Missing searchTerm for search extraction');
+          }
           searchParams = {
             ...searchParams,
-            searchHeader: search_header,
-            searchValue: search_value,
-            rowIndex: row_index
+            searchTerm,
+            columns,
+            caseSensitive
           };
           break;
-        case 'column':
-          searchParams = {
-            ...searchParams,
-            searchHeader: search_header,
-            columnIndex: column_index
-          };
-          break;
-        case 'table':
-          searchParams = {
-            ...searchParams,
-            searchHeader: search_header,
-            searchValue: search_value
-          };
-          break;
+          
         default:
           throw new Error(`Unknown search type: ${search_type}`);
       }

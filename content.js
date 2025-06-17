@@ -198,29 +198,8 @@ function extractDataFromPage(params) {
     let tableMatch = false;
     let tableExtractedData = null;
     
-    switch (params.searchType) {
-      case 'cell_by_row_id':
-        tableExtractedData = extractCellByRowId(tableData, params);
-        break;
-      case 'extract_by_criteria':
-        tableExtractedData = extractByCriteria(tableData, params);
-        break;
-      case 'cell':
-        tableExtractedData = extractCell(tableData, params);
-        break;
-      case 'row':
-        tableExtractedData = extractRow(tableData, params);
-        break;
-      case 'column':
-        tableExtractedData = extractColumn(tableData, params);
-        break;
-      case 'table':
-        tableExtractedData = extractEntireTable(tableData, params);
-        break;
-      default:
-        console.warn('Unknown search type:', params.searchType);
-        continue;
-    }
+    // Use the new unified extraction function
+    tableExtractedData = extractFromTable(tableData, params);
     
     if (tableExtractedData) {
       tableMatch = true;
@@ -249,6 +228,483 @@ function extractDataFromPage(params) {
   showLoadingNotification();
   
   return { data: extractedData, metadata };
+}
+
+/**
+ * Unified table extraction function that handles all extraction types
+ */
+function extractFromTable(tableData, params) {
+  const { searchType, ...searchParams } = params;
+  
+  console.log('Extracting from table with type:', searchType, 'and params:', searchParams);
+  
+  switch (searchType) {
+    case 'cell':
+      return extractCellData(tableData, searchParams);
+    case 'cell_by_row_id':
+      return extractCellByRowIdentifier(tableData, searchParams);
+    case 'row':
+      return extractRowData(tableData, searchParams);
+    case 'column':
+      return extractColumnData(tableData, searchParams);
+    case 'table':
+      return extractTableData(tableData, searchParams);
+    case 'extract_by_criteria':
+      return extractByCriteria(tableData, searchParams);
+    case 'list':
+      return extractListData(tableData, searchParams);
+    case 'search':
+      return extractSearchResults(tableData, searchParams);
+    default:
+      console.warn('Unknown search type:', searchType);
+      return null;
+  }
+}
+
+/**
+ * Enhanced cell extraction with multiple strategies
+ */
+function extractCellData(tableData, params) {
+  const { searchHeader, searchValue, rowIndex, columnIndex } = params;
+  
+  // If specific indices are provided, use them directly
+  if (typeof rowIndex === 'number' && typeof columnIndex === 'number') {
+    if (rowIndex >= 0 && rowIndex < tableData.rows.length && 
+        columnIndex >= 0 && columnIndex < tableData.headers.length) {
+      return {
+        type: 'cell',
+        value: tableData.rows[rowIndex][columnIndex],
+        header: tableData.headers[columnIndex],
+        rowIndex: rowIndex,
+        columnIndex: columnIndex,
+        matchType: 'direct_index'
+      };
+    }
+    return null;
+  }
+  
+  // Find column index using flexible matching
+  const foundColumnIndex = findColumnIndex(tableData.headers, searchHeader);
+  if (foundColumnIndex === -1) {
+    console.log('Column not found:', searchHeader, 'Available:', tableData.headers);
+    return null;
+  }
+  
+  // If only column is specified, return first non-empty value
+  if (!searchValue) {
+    for (let i = 0; i < tableData.rows.length; i++) {
+      const value = tableData.rows[i][foundColumnIndex];
+      if (value && value.trim()) {
+        return {
+          type: 'cell',
+          value: value,
+          header: tableData.headers[foundColumnIndex],
+          rowIndex: i,
+          columnIndex: foundColumnIndex,
+          matchType: 'first_non_empty'
+        };
+      }
+    }
+    return null;
+  }
+  
+  // Search for matching value in the column
+  const matchResult = findValueInColumn(tableData.rows, foundColumnIndex, searchValue);
+  if (matchResult) {
+    return {
+      type: 'cell',
+      value: matchResult.value,
+      header: tableData.headers[foundColumnIndex],
+      rowIndex: matchResult.rowIndex,
+      columnIndex: foundColumnIndex,
+      matchType: matchResult.matchType
+    };
+  }
+  
+  return null;
+}
+
+/**
+ * Enhanced cell extraction by row identifier
+ */
+function extractCellByRowIdentifier(tableData, params) {
+  const { column_header, row_identifier } = params;
+  
+  // Find target column
+  const targetColumnIndex = findColumnIndex(tableData.headers, column_header);
+  if (targetColumnIndex === -1) {
+    console.log('Target column not found:', column_header);
+    return null;
+  }
+  
+  // Find identifier column
+  const idColumnIndex = findColumnIndex(tableData.headers, row_identifier.header);
+  if (idColumnIndex === -1) {
+    console.log('Identifier column not found:', row_identifier.header);
+    return null;
+  }
+  
+  // Find matching row
+  const matchResult = findValueInColumn(tableData.rows, idColumnIndex, row_identifier.value);
+  if (matchResult) {
+    return {
+      type: 'cell_by_row_id',
+      value: tableData.rows[matchResult.rowIndex][targetColumnIndex],
+      column: tableData.headers[targetColumnIndex],
+      rowIdentifier: {
+        column: tableData.headers[idColumnIndex],
+        value: tableData.rows[matchResult.rowIndex][idColumnIndex]
+      },
+      rowIndex: matchResult.rowIndex,
+      matchType: matchResult.matchType
+    };
+  }
+  
+  return null;
+}
+
+/**
+ * Enhanced row extraction
+ */
+function extractRowData(tableData, params) {
+  const { searchHeader, searchValue, rowIndex } = params;
+  
+  // Direct row index access
+  if (typeof rowIndex === 'number') {
+    if (rowIndex >= 0 && rowIndex < tableData.rows.length) {
+      return {
+        type: 'row',
+        data: createRowObject(tableData.headers, tableData.rows[rowIndex]),
+        rowIndex: rowIndex,
+        matchType: 'direct_index'
+      };
+    }
+    return null;
+  }
+  
+  // Search by header and value
+  if (searchHeader && searchValue) {
+    const columnIndex = findColumnIndex(tableData.headers, searchHeader);
+    if (columnIndex === -1) return null;
+    
+    const matchResult = findValueInColumn(tableData.rows, columnIndex, searchValue);
+    if (matchResult) {
+      return {
+        type: 'row',
+        data: createRowObject(tableData.headers, tableData.rows[matchResult.rowIndex]),
+        rowIndex: matchResult.rowIndex,
+        matchType: matchResult.matchType
+      };
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Enhanced column extraction
+ */
+function extractColumnData(tableData, params) {
+  const { searchHeader, columnIndex: paramColumnIndex } = params;
+  
+  let targetIndex = paramColumnIndex;
+  if (typeof targetIndex !== 'number') {
+    targetIndex = findColumnIndex(tableData.headers, searchHeader);
+  }
+  
+  if (targetIndex === -1 || targetIndex >= tableData.headers.length) {
+    return null;
+  }
+  
+  const values = tableData.rows.map(row => row[targetIndex]).filter(val => val && val.trim());
+  
+  return {
+    type: 'column',
+    header: tableData.headers[targetIndex],
+    values: values,
+    totalValues: values.length,
+    columnIndex: targetIndex
+  };
+}
+
+/**
+ * Enhanced table extraction
+ */
+function extractTableData(tableData, params) {
+  const { searchValue, limit } = params;
+  
+  let rows = tableData.rows;
+  
+  // Filter by search value if provided
+  if (searchValue) {
+    rows = rows.filter(row => 
+      row.some(cell => 
+        cell && cell.toString().toLowerCase().includes(searchValue.toLowerCase())
+      )
+    );
+  }
+  
+  // Apply limit if specified
+  if (limit && typeof limit === 'number' && limit > 0) {
+    rows = rows.slice(0, limit);
+  }
+  
+  if (rows.length === 0) return null;
+  
+  return {
+    type: 'table',
+    headers: tableData.headers,
+    rows: rows.map(row => createRowObject(tableData.headers, row)),
+    totalRows: rows.length,
+    originalRowCount: tableData.rows.length
+  };
+}
+
+/**
+ * Enhanced criteria-based extraction
+ */
+function extractByCriteria(tableData, params) {
+  const { criteria } = params;
+  
+  // Convert single criteria to array
+  const criteriaArray = Array.isArray(criteria) ? criteria : [criteria];
+  
+  // Validate criteria
+  for (const criterion of criteriaArray) {
+    if (!criterion.column || !criterion.operator || criterion.value === undefined) {
+      console.error('Invalid criterion:', criterion);
+      return null;
+    }
+  }
+  
+  // Find matching rows
+  const matchingRows = tableData.rows.filter(row => {
+    return criteriaArray.every(criterion => {
+      const columnIndex = findColumnIndex(tableData.headers, criterion.column);
+      if (columnIndex === -1) return false;
+      
+      const cellValue = row[columnIndex];
+      return evaluateCriterion(cellValue, criterion);
+    });
+  });
+  
+  if (matchingRows.length === 0) return null;
+  
+  return {
+    type: 'extract_by_criteria',
+    criteria: criteriaArray,
+    rows: matchingRows.map(row => createRowObject(tableData.headers, row)),
+    totalMatches: matchingRows.length
+  };
+}
+
+/**
+ * Extract list data (useful for simple lists or enumerated data)
+ */
+function extractListData(tableData, params) {
+  const { column, filter, sort, limit } = params;
+  
+  let columnIndex = 0; // Default to first column
+  if (column) {
+    columnIndex = findColumnIndex(tableData.headers, column);
+    if (columnIndex === -1) columnIndex = 0;
+  }
+  
+  let values = tableData.rows.map(row => row[columnIndex]).filter(val => val && val.trim());
+  
+  // Apply filter if specified
+  if (filter) {
+    values = values.filter(val => 
+      val.toString().toLowerCase().includes(filter.toLowerCase())
+    );
+  }
+  
+  // Apply sorting if specified
+  if (sort) {
+    if (sort === 'asc') {
+      values.sort((a, b) => a.toString().localeCompare(b.toString()));
+    } else if (sort === 'desc') {
+      values.sort((a, b) => b.toString().localeCompare(a.toString()));
+    }
+  }
+  
+  // Apply limit
+  if (limit && typeof limit === 'number' && limit > 0) {
+    values = values.slice(0, limit);
+  }
+  
+  return {
+    type: 'list',
+    values: values,
+    totalValues: values.length,
+    column: tableData.headers[columnIndex],
+    columnIndex: columnIndex
+  };
+}
+
+/**
+ * Extract search results (general search across all columns)
+ */
+function extractSearchResults(tableData, params) {
+  const { searchTerm, columns, caseSensitive = false } = params;
+  
+  if (!searchTerm) return null;
+  
+  const searchValue = caseSensitive ? searchTerm : searchTerm.toLowerCase();
+  const targetColumns = columns ? 
+    columns.map(col => findColumnIndex(tableData.headers, col)).filter(idx => idx !== -1) :
+    Array.from({ length: tableData.headers.length }, (_, i) => i);
+  
+  const matchingRows = tableData.rows.filter(row => {
+    return targetColumns.some(colIndex => {
+      const cellValue = row[colIndex];
+      if (!cellValue) return false;
+      
+      const cellStr = caseSensitive ? cellValue.toString() : cellValue.toString().toLowerCase();
+      return cellStr.includes(searchValue);
+    });
+  });
+  
+  if (matchingRows.length === 0) return null;
+  
+  return {
+    type: 'search_results',
+    searchTerm: searchTerm,
+    matchingRows: matchingRows.map(row => createRowObject(tableData.headers, row)),
+    totalMatches: matchingRows.length,
+    searchedColumns: targetColumns.map(idx => tableData.headers[idx])
+  };
+}
+
+/**
+ * Utility function to find column index with flexible matching
+ */
+function findColumnIndex(headers, searchHeader) {
+  if (!searchHeader) return -1;
+  
+  const searchLower = searchHeader.toLowerCase().trim();
+  
+  // Strategy 1: Exact match
+  let index = headers.findIndex(h => h.toLowerCase().trim() === searchLower);
+  if (index !== -1) return index;
+  
+  // Strategy 2: Contains match
+  index = headers.findIndex(h => h.toLowerCase().trim().includes(searchLower));
+  if (index !== -1) return index;
+  
+  // Strategy 3: Normalized match (remove special characters)
+  const normalizedSearch = searchLower.replace(/[-_\s]/g, '');
+  index = headers.findIndex(h => 
+    h.toLowerCase().replace(/[-_\s]/g, '').includes(normalizedSearch)
+  );
+  if (index !== -1) return index;
+  
+  // Strategy 4: Partial word match
+  const searchWords = searchLower.split(/\s+/);
+  index = headers.findIndex(h => {
+    const headerLower = h.toLowerCase();
+    return searchWords.some(word => headerLower.includes(word));
+  });
+  
+  return index;
+}
+
+/**
+ * Utility function to find value in column with multiple matching strategies
+ */
+function findValueInColumn(rows, columnIndex, searchValue) {
+  if (!searchValue) return null;
+  
+  const searchLower = searchValue.toString().toLowerCase().trim();
+  
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+    const cellValue = rows[rowIndex][columnIndex];
+    if (!cellValue) continue;
+    
+    const cellLower = cellValue.toString().toLowerCase().trim();
+    
+    // Strategy 1: Exact match
+    if (cellLower === searchLower) {
+      return { value: cellValue, rowIndex, matchType: 'exact' };
+    }
+    
+    // Strategy 2: Contains match
+    if (cellLower.includes(searchLower)) {
+      return { value: cellValue, rowIndex, matchType: 'contains' };
+    }
+    
+    // Strategy 3: Normalized match
+    const normalizedCell = cellLower.replace(/[-_\s]/g, '');
+    const normalizedSearch = searchLower.replace(/[-_\s]/g, '');
+    if (normalizedCell.includes(normalizedSearch)) {
+      return { value: cellValue, rowIndex, matchType: 'normalized' };
+    }
+    
+    // Strategy 4: Numeric match
+    const cellNum = parseFloat(cellValue);
+    const searchNum = parseFloat(searchValue);
+    if (!isNaN(cellNum) && !isNaN(searchNum) && cellNum === searchNum) {
+      return { value: cellValue, rowIndex, matchType: 'numeric' };
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Utility function to evaluate a single criterion
+ */
+function evaluateCriterion(cellValue, criterion) {
+  if (cellValue === undefined || cellValue === null) return false;
+  
+  const cellStr = cellValue.toString().toLowerCase().trim();
+  const criterionStr = criterion.value.toString().toLowerCase().trim();
+  
+  // Try numeric comparison first
+  const cellNum = parseFloat(cellValue);
+  const criterionNum = parseFloat(criterion.value);
+  const isNumeric = !isNaN(cellNum) && !isNaN(criterionNum);
+  
+  switch (criterion.operator) {
+    case '=':
+      return isNumeric ? cellNum === criterionNum : cellStr === criterionStr;
+    case '!=':
+      return isNumeric ? cellNum !== criterionNum : cellStr !== criterionStr;
+    case '>':
+      return isNumeric ? cellNum > criterionNum : cellStr > criterionStr;
+    case '<':
+      return isNumeric ? cellNum < criterionNum : cellStr < criterionStr;
+    case '>=':
+      return isNumeric ? cellNum >= criterionNum : cellStr >= criterionStr;
+    case '<=':
+      return isNumeric ? cellNum <= criterionNum : cellStr <= criterionStr;
+    case 'contains':
+      return cellStr.includes(criterionStr);
+    case 'starts_with':
+      return cellStr.startsWith(criterionStr);
+    case 'ends_with':
+      return cellStr.endsWith(criterionStr);
+    case 'regex':
+      try {
+        const regex = new RegExp(criterion.value, 'i');
+        return regex.test(cellValue);
+      } catch (e) {
+        return false;
+      }
+    default:
+      return false;
+  }
+}
+
+/**
+ * Utility function to create row object from headers and values
+ */
+function createRowObject(headers, values) {
+  const rowData = {};
+  headers.forEach((header, index) => {
+    rowData[header] = values[index] || '';
+  });
+  return rowData;
 }
 
 /**
@@ -332,230 +788,6 @@ function parseTable(table) {
     console.error('Error parsing table:', error);
     return result;
   }
-}
-
-/**
- * Extracts a single cell based on search criteria
- */
-function extractCell(tableData, params) {
-  const { searchHeader, searchValue } = params;
-  
-  console.log('Searching for:', { searchHeader, searchValue });
-  console.log('Available headers:', tableData.headers);
-  
-  // More flexible header matching with multiple strategies
-  let headerIndex = -1;
-  
-  // Strategy 1: Exact match (case-insensitive)
-  headerIndex = tableData.headers.findIndex(h => 
-    h.toLowerCase().trim() === searchHeader.toLowerCase().trim()
-  );
-  
-  // Strategy 2: Partial match (case-insensitive)
-  if (headerIndex === -1) {
-    headerIndex = tableData.headers.findIndex(h => 
-      h.toLowerCase().trim().includes(searchHeader.toLowerCase().trim())
-    );
-  }
-  
-  // Strategy 3: Remove common separators and try again
-  if (headerIndex === -1) {
-    const normalizedSearchHeader = searchHeader.toLowerCase().replace(/[-_\s]/g, '');
-    headerIndex = tableData.headers.findIndex(h => 
-      h.toLowerCase().replace(/[-_\s]/g, '').includes(normalizedSearchHeader)
-    );
-  }
-  
-  console.log('Found header index:', headerIndex);
-  
-  if (headerIndex === -1) {
-    console.log('Header not found. Available headers:', tableData.headers);
-    return null;
-  }
-  
-  // More flexible value matching with multiple strategies
-  for (let rowIndex = 0; rowIndex < tableData.rows.length; rowIndex++) {
-    const row = tableData.rows[rowIndex];
-    const cellValue = row[headerIndex];
-    
-    if (!cellValue) continue; // Skip empty cells
-    
-    const normalizedCellValue = cellValue.toString().toLowerCase().trim();
-    const normalizedSearchValue = searchValue.toString().toLowerCase().trim();
-    
-    console.log(`Row ${rowIndex}: Comparing "${normalizedCellValue}" with "${normalizedSearchValue}"`);
-    
-    // Strategy 1: Exact match
-    if (normalizedCellValue === normalizedSearchValue) {
-      console.log('Found exact match at row:', rowIndex);
-      return {
-        type: 'cell',
-        value: cellValue,
-        header: tableData.headers[headerIndex],
-        rowIndex: rowIndex,
-        matchType: 'exact'
-      };
-    }
-    
-    // Strategy 2: Partial match (contains)
-    if (normalizedCellValue.includes(normalizedSearchValue)) {
-      console.log('Found partial match at row:', rowIndex);
-      return {
-        type: 'cell',
-        value: cellValue,
-        header: tableData.headers[headerIndex],
-        rowIndex: rowIndex,
-        matchType: 'partial'
-      };
-    }
-    
-    // Strategy 3: Remove spaces, hyphens, underscores and try again
-    const cleanCellValue = normalizedCellValue.replace(/[-_\s]/g, '');
-    const cleanSearchValue = normalizedSearchValue.replace(/[-_\s]/g, '');
-    
-    if (cleanCellValue.includes(cleanSearchValue)) {
-      console.log('Found normalized match at row:', rowIndex);
-      return {
-        type: 'cell',
-        value: cellValue,
-        header: tableData.headers[headerIndex],
-        rowIndex: rowIndex,
-        matchType: 'normalized'
-      };
-    }
-    
-    // Strategy 4: For numeric values, try parsing and comparing
-    const numericCellValue = parseFloat(cellValue);
-    const numericSearchValue = parseFloat(searchValue);
-    
-    if (!isNaN(numericCellValue) && !isNaN(numericSearchValue)) {
-      if (numericCellValue === numericSearchValue) {
-        console.log('Found numeric match at row:', rowIndex);
-        return {
-          type: 'cell',
-          value: cellValue,
-          header: tableData.headers[headerIndex],
-          rowIndex: rowIndex,
-          matchType: 'numeric'
-        };
-      }
-    }
-  }
-  
-  console.log('No matching cell found');
-  return null;
-}
-
-/**
- * Extracts an entire row based on search criteria
- */
-function extractRow(tableData, params) {
-  const { searchHeader, searchValue, rowIndex } = params;
-  
-  if (typeof rowIndex === 'number') {
-    // Extract specific row by index
-    if (rowIndex >= 0 && rowIndex < tableData.rows.length) {
-      const rowData = {};
-      tableData.headers.forEach((header, i) => {
-        rowData[header] = tableData.rows[rowIndex][i];
-      });
-      return {
-        type: 'row',
-        data: rowData,
-        rowIndex
-      };
-    }
-    return null;
-  }
-  
-  // Search for row by header and value
-  const headerIndex = tableData.headers.findIndex(h => 
-    h.toLowerCase().includes(searchHeader.toLowerCase())
-  );
-  
-  if (headerIndex === -1) return null;
-  
-  for (let i = 0; i < tableData.rows.length; i++) {
-    const row = tableData.rows[i];
-    if (row[headerIndex]?.toLowerCase().includes(searchValue.toLowerCase())) {
-      const rowData = {};
-      tableData.headers.forEach((header, j) => {
-        rowData[header] = row[j];
-      });
-      return {
-        type: 'row',
-        data: rowData,
-        rowIndex: i
-      };
-    }
-  }
-  
-  return null;
-}
-
-/**
- * Extracts an entire column based on search criteria
- */
-function extractColumn(tableData, params) {
-  const { searchHeader, columnIndex } = params;
-  
-  let targetIndex = columnIndex;
-  if (typeof targetIndex !== 'number') {
-    targetIndex = tableData.headers.findIndex(h => 
-      h.toLowerCase().includes(searchHeader.toLowerCase())
-    );
-  }
-  
-  if (targetIndex === -1 || targetIndex >= tableData.headers.length) return null;
-  
-  const columnData = {
-    type: 'column',
-    header: tableData.headers[targetIndex],
-    values: tableData.rows.map(row => row[targetIndex])
-  };
-  
-  return columnData;
-}
-
-/**
- * Extracts the entire table data
- */
-function extractEntireTable(tableData, params) {
-  const { searchValue } = params;
-  
-  // If no search value, return entire table
-  if (!searchValue) {
-    return {
-      type: 'table',
-      headers: tableData.headers,
-      rows: tableData.rows.map((row, i) => {
-        const rowData = {};
-        tableData.headers.forEach((header, j) => {
-          rowData[header] = row[j];
-        });
-        return rowData;
-      })
-    };
-  }
-  
-  // Search for rows containing the value
-  const matchingRows = tableData.rows.filter(row => 
-    row.some(cell => cell.toLowerCase().includes(searchValue.toLowerCase()))
-  );
-  
-  if (matchingRows.length === 0) return null;
-  
-  return {
-    type: 'table',
-    headers: tableData.headers,
-    rows: matchingRows.map(row => {
-      const rowData = {};
-      tableData.headers.forEach((header, j) => {
-        rowData[header] = row[j];
-      });
-      return rowData;
-    })
-  };
 }
 
 /**
@@ -814,6 +1046,46 @@ function showExtractedData(data, metadata, enhancedData = null) {
         </div>
       `;
       break;
+      
+    case 'list':
+      content.innerHTML = `
+        <div style="margin-bottom: 15px">
+          <h4 style="margin: 0 0 10px 0">${data.column} (${data.totalValues} items)</h4>
+          <ul style="margin: 0; padding-left: 20px; max-height: 200px; overflow-y: auto">
+            ${data.values.map(v => `<li>${v}</li>`).join('')}
+          </ul>
+        </div>
+      `;
+      break;
+      
+    case 'search_results':
+      content.innerHTML = `
+        <div style="margin-bottom: 15px">
+          <h4 style="margin: 0 0 10px 0">Search Results for "${data.searchTerm}" (${data.totalMatches} matches)</h4>
+          <div style="font-size: 0.9em; color: #666; margin-bottom: 10px">
+            Searched columns: ${data.searchedColumns.join(', ')}
+          </div>
+          <table style="width: 100%; border-collapse: collapse; margin-top: 10px">
+            <thead>
+              <tr>
+                ${metadata.tableHeaders.map(header => 
+                  `<th style="padding: 8px; border: 1px solid #ddd; background-color: #f5f5f5">${header}</th>`
+                ).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${data.matchingRows.map(row => `
+                <tr>
+                  ${metadata.tableHeaders.map(header => 
+                    `<td style="padding: 8px; border: 1px solid #ddd">${row[header]}</td>`
+                  ).join('')}
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+      break;
   }
   
   notification.appendChild(content);
@@ -839,158 +1111,4 @@ function showExtractedData(data, metadata, enhancedData = null) {
       notification.remove();
     }
   }, 30000);
-}
-
-/**
- * Extracts a cell value based on a column name and row identifier
- */
-function extractCellByRowId(tableData, params) {
-  const { column_header, row_identifier } = params;
-  
-  console.log('Searching for cell with params:', params);
-  
-  // Find the column index we want to get the value from
-  const targetColumnIndex = tableData.headers.findIndex(h => 
-    h.toLowerCase().trim().includes(column_header.toLowerCase().trim())
-  );
-  
-  // Find the identifier column index
-  const idColumnIndex = tableData.headers.findIndex(h => 
-    h.toLowerCase().trim().includes(row_identifier.header.toLowerCase().trim())
-  );
-  
-  console.log('Column indices:', { targetColumnIndex, idColumnIndex });
-  
-  if (targetColumnIndex === -1 || idColumnIndex === -1) {
-    console.log('Could not find required columns');
-    return null;
-  }
-  
-  // Search for the row with matching identifier
-  for (let rowIndex = 0; rowIndex < tableData.rows.length; rowIndex++) {
-    const row = tableData.rows[rowIndex];
-    const idValue = row[idColumnIndex];
-    
-    if (!idValue) continue;
-    
-    // Try different matching strategies for the identifier
-    const normalizedIdValue = idValue.toString().toLowerCase().trim();
-    const normalizedSearchValue = row_identifier.value.toString().toLowerCase().trim();
-    
-    // Check for match
-    if (normalizedIdValue === normalizedSearchValue || 
-        normalizedIdValue.includes(normalizedSearchValue)) {
-      
-      // Found the row, return the target cell value
-      return {
-        type: 'cell_by_row_id',
-        value: row[targetColumnIndex],
-        column: tableData.headers[targetColumnIndex],
-        rowIdentifier: {
-          column: tableData.headers[idColumnIndex],
-          value: idValue
-        },
-        rowIndex: rowIndex
-      };
-    }
-  }
-  
-  console.log('No matching row found');
-  return null;
-}
-
-/**
- * Extracts rows based on criteria
- */
-function extractByCriteria(tableData, params) {
-  const { criteria } = params;
-  
-  console.log('Searching with criteria:', criteria);
-  
-  // Convert single criteria to array for uniform handling
-  const criteriaArray = Array.isArray(criteria) ? criteria : [criteria];
-  
-  // Validate criteria
-  for (const criterion of criteriaArray) {
-    if (!criterion.column || !criterion.operator || criterion.value === undefined) {
-      console.error('Invalid criterion:', criterion);
-      return null;
-    }
-  }
-  
-  // Find matching rows
-  const matchingRows = tableData.rows.filter(row => {
-    // Check if row matches all criteria
-    return criteriaArray.every(criterion => {
-      // Find column index
-      const columnIndex = tableData.headers.findIndex(h => 
-        h.toLowerCase().trim().includes(criterion.column.toLowerCase().trim())
-      );
-      
-      if (columnIndex === -1) {
-        console.log(`Column not found: ${criterion.column}`);
-        return false;
-      }
-      
-      const cellValue = row[columnIndex];
-      if (cellValue === undefined) return false;
-      
-      // Convert values for comparison
-      const cellValueNum = parseFloat(cellValue);
-      const criterionValueNum = parseFloat(criterion.value);
-      const isNumeric = !isNaN(cellValueNum) && !isNaN(criterionValueNum);
-      
-      // Apply operator
-      switch (criterion.operator) {
-        case '=':
-          return isNumeric ? cellValueNum === criterionValueNum : 
-                 cellValue.toLowerCase().trim() === criterion.value.toLowerCase().trim();
-        case '!=':
-          return isNumeric ? cellValueNum !== criterionValueNum : 
-                 cellValue.toLowerCase().trim() !== criterion.value.toLowerCase().trim();
-        case '>':
-          return isNumeric ? cellValueNum > criterionValueNum : 
-                 cellValue.toLowerCase().trim() > criterion.value.toLowerCase().trim();
-        case '<':
-          return isNumeric ? cellValueNum < criterionValueNum : 
-                 cellValue.toLowerCase().trim() < criterion.value.toLowerCase().trim();
-        case '>=':
-          return isNumeric ? cellValueNum >= criterionValueNum : 
-                 cellValue.toLowerCase().trim() >= criterion.value.toLowerCase().trim();
-        case '<=':
-          return isNumeric ? cellValueNum <= criterionValueNum : 
-                 cellValue.toLowerCase().trim() <= criterion.value.toLowerCase().trim();
-        case 'contains':
-          return cellValue.toLowerCase().includes(criterion.value.toLowerCase());
-        case 'starts_with':
-          return cellValue.toLowerCase().startsWith(criterion.value.toLowerCase());
-        case 'ends_with':
-          return cellValue.toLowerCase().endsWith(criterion.value.toLowerCase());
-        default:
-          console.warn('Unknown operator:', criterion.operator);
-          return false;
-      }
-    });
-  });
-  
-  if (matchingRows.length === 0) {
-    console.log('No rows matching criteria');
-    return null;
-  }
-  
-  // Convert matching rows to objects with headers
-  const result = {
-    type: 'extract_by_criteria',
-    criteria: criteriaArray,
-    rows: matchingRows.map(row => {
-      const rowData = {};
-      tableData.headers.forEach((header, index) => {
-        rowData[header] = row[index];
-      });
-      return rowData;
-    }),
-    totalMatches: matchingRows.length
-  };
-  
-  return result;
 }
