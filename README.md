@@ -11,10 +11,7 @@ A Chrome extension that helps automate web form interactions through intelligent
 - **Cross-Domain Support**: Works across different websites with proper permissions
 
 ## Prerequisites
-
-- Node.js (v14 or higher)
 - Chrome browser
-- A running backend server (see Configuration section)
 
 ## Installation
 
@@ -22,16 +19,6 @@ A Chrome extension that helps automate web form interactions through intelligent
 ```bash
 git clone [repository-url]
 cd [repository-name]
-```
-
-2. Install dependencies:
-```bash
-npm install
-```
-
-3. Build the extension:
-```bash
-npm run build
 ```
 
 4. Load the extension in Chrome:
@@ -43,11 +30,6 @@ npm run build
 
 The extension requires a backend server to handle authentication and data processing. Configure the server URL in `background.js`:
 
-```javascript
-const SERVER_URL = process.env.NODE_ENV === 'production' 
-  ? 'https://your-production-server.com'
-  : 'http://localhost:3000';
-```
 
 ## Usage
 
@@ -79,18 +61,3 @@ The extension uses Google OAuth for authentication. When first installed, users 
 - `manifest.json`: Extension configuration and permissions
 - `content.js`: Content scripts for webpage interaction
 - `popup/`: UI components for the extension popup
-
-### API Endpoints
-
-The extension communicates with the backend server through these endpoints:
-
-- `/api/users/auth/google`: Google OAuth token exchange
-- `/api/forms/validate`: Form data validation
-- `/api/forms/extract`: Data extraction
-- `/api/forms/extract/validate`: Validation of extracted data
-
-## Security
-
-- All API requests are authenticated using JWT tokens
-- Sensitive data is stored securely in Chrome's storage
-- Cross-origin requests are properly handled with appropriate permissions
