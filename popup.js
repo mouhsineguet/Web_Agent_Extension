@@ -10,10 +10,17 @@ document.addEventListener('DOMContentLoaded', function() {
   
   let processedData = null;
   
-  // Load saved API key if available
-  chrome.storage.local.get(['groqApiKey'], function(result) {
+  // Load saved API key and URL aliases if available
+  chrome.storage.local.get(['groqApiKey', 'urlAliases'], function(result) {
     if (result.groqApiKey) {
       apiKeyInput.value = result.groqApiKey;
+    }
+    if (result.urlAliases) {
+      window.urlAliases = result.urlAliases;
+    } else {
+      // Set default aliases if not present
+      window.urlAliases = { Home: 'https://tally.so/r/wLaaRz', PageData: 'https://datatables.net' };
+      chrome.storage.local.set({ urlAliases: window.urlAliases });
     }
   });
   
@@ -30,9 +37,56 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
   
+  // Add UI for managing URL aliases
+  const aliasContainer = document.createElement('div');
+  aliasContainer.innerHTML = `
+    <label for="aliasKey">Keyword:</label>
+    <input type="text" id="aliasKey" placeholder="e.g. Home" style="width: 80px; margin-right: 5px;">
+    <label for="aliasUrl">URL:</label>
+    <input type="text" id="aliasUrl" placeholder="e.g. https://example.com" style="width: 160px; margin-right: 5px;">
+    <button id="saveAlias">Add Alias</button>
+    <div id="aliasList" style="margin-top: 8px; font-size: 12px;"></div>
+  `;
+  document.getElementById('apiKeyContainer').appendChild(aliasContainer);
+
+  function renderAliasList() {
+    const aliasListDiv = document.getElementById('aliasList');
+    aliasListDiv.innerHTML = Object.entries(window.urlAliases || {})
+      .map(([k, v]) => `<b>${k}</b>: <a href="${v}" target="_blank">${v}</a>`)
+      .join('<br>');
+  }
+  renderAliasList();
+
+  document.getElementById('saveAlias').addEventListener('click', function() {
+    const key = document.getElementById('aliasKey').value.trim();
+    const url = document.getElementById('aliasUrl').value.trim();
+    if (key && url) {
+      window.urlAliases[key] = url;
+      chrome.storage.local.set({ urlAliases: window.urlAliases }, function() {
+        statusDiv.textContent = `Alias saved: ${key} → ${url}`;
+        renderAliasList();
+        setTimeout(() => { statusDiv.textContent = ''; }, 2000);
+      });
+    } else {
+      statusDiv.textContent = 'Please enter both a keyword and a URL';
+    }
+  });
+
+  // Replace keywords in prompt with URLs
+  function replaceAliasesInPrompt(prompt) {
+    if (!window.urlAliases) return prompt;
+    let replaced = prompt;
+    for (const [key, url] of Object.entries(window.urlAliases)) {
+      // Replace whole word matches (case-insensitive)
+      const regex = new RegExp(`\\b${key}\\b`, 'gi');
+      replaced = replaced.replace(regex, url);
+    }
+    return replaced;
+  }
+  
   // Process user prompt
   processPromptButton.addEventListener('click', async function() {
-    const prompt = userPromptTextarea.value.trim();
+    let prompt = userPromptTextarea.value.trim();
     const apiKey = apiKeyInput.value.trim();
     
     if (!prompt) {
@@ -44,6 +98,9 @@ document.addEventListener('DOMContentLoaded', function() {
       statusDiv.textContent = 'Please enter your Groq API key';
       return;
     }
+    
+    // Replace aliases before sending to LLM
+    prompt = replaceAliasesInPrompt(prompt);
     
     statusDiv.textContent = 'Processing prompt...';
     resultDiv.classList.add('hidden');
@@ -94,6 +151,8 @@ document.addEventListener('DOMContentLoaded', function() {
       "You are Controller. You understand the user's prompt and detect their intent " +
       "as either 'Fill' (to fill a web form) or 'Extract' (to extract data from a webpage). " +
       "For extraction, you must determine the type and any filter criteria. " +
+      "You also support keyword-to-URL mapping: if the user mentions a keyword that matches a known alias, replace it with the corresponding URL. " +
+      "For example, 'Home' means https://tally.so/r/wLaaRz and 'PageData' means https://datatables.net. " +
       "Extract the needed info in JSON format as shown in the examples below:\n\n" +
       
       "Available extraction types:\n" +
@@ -200,6 +259,12 @@ document.addEventListener('DOMContentLoaded', function() {
       "\"search_type\": \"search\", " +
       "\"searchTerm\": \"laptop\", " +
       "\"URL\": \"https://example.com/products\" }\n\n" +
+      
+      "Example 12 (Alias):\n" +
+      "User: Get all employees from Home\n\n" +
+      "Answer: { \"intent\": \"Extract\", \"search_type\": \"table\", \"URL\": \"https://tally.so/r/wLaaRz\" }\n\n" +
+      "User: What is the salary of the first employee in PageData?\n\n" +
+      "Answer: { \"intent\": \"Extract\", \"search_type\": \"cell\", \"searchHeader\": \"Salary\", \"rowIndex\": 0, \"URL\": \"https://datatables.net\" }\n\n" +
       
       "Guidelines for extraction:\n" +
       "1. For 'cell' type: Use when you need a specific cell value by column and row\n" +
