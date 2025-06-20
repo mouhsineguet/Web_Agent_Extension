@@ -887,6 +887,58 @@ function showExtractedData(data, metadata, enhancedData = null) {
   title.style.color = '#4285f4';
   notification.appendChild(title);
   
+  // Add query value/criteria/search term at the top
+  const queryDiv = document.createElement('div');
+  queryDiv.style.fontSize = '13px';
+  queryDiv.style.color = '#222';
+  queryDiv.style.marginBottom = '8px';
+  let queryText = '';
+  switch (data.type) {
+    case 'cell':
+      if (data.header && typeof data.rowIndex !== 'undefined') {
+        queryText = `<b>Query:</b> ${data.header}, Row ${data.rowIndex + 1}`;
+      }
+      break;
+    case 'cell_by_row_id':
+      if (data.column && data.rowIdentifier) {
+        queryText = `<b>Query:</b> ${data.column} where ${data.rowIdentifier.column} = ${data.rowIdentifier.value}`;
+      }
+      break;
+    case 'row':
+      if (typeof data.rowIndex !== 'undefined') {
+        queryText = `<b>Query:</b> Row ${data.rowIndex + 1}`;
+      }
+      break;
+    case 'column':
+      if (data.header) {
+        queryText = `<b>Query:</b> Column: ${data.header}`;
+      }
+      break;
+    case 'table':
+      queryText = `<b>Query:</b> Table extraction`;
+      break;
+    case 'extract_by_criteria':
+      if (data.criteria) {
+        const criteriaList = data.criteria.map(c => `${c.column} ${c.operator} ${c.value}`).join(' AND ');
+        queryText = `<b>Query:</b> Criteria: ${criteriaList}`;
+      }
+      break;
+    case 'list':
+      if (data.column) {
+        queryText = `<b>Query:</b> List of ${data.column}`;
+      }
+      break;
+    case 'search_results':
+      if (data.searchTerm) {
+        queryText = `<b>Query:</b> Search for "${data.searchTerm}"`;
+      }
+      break;
+  }
+  if (queryText) {
+    queryDiv.innerHTML = queryText;
+    notification.appendChild(queryDiv);
+  }
+  
   // Add metadata
   const metaInfo = document.createElement('div');
   metaInfo.style.fontSize = '12px';
@@ -902,27 +954,6 @@ function showExtractedData(data, metadata, enhancedData = null) {
     <p>Extracted at: ${new Date(metadata.timestamp).toLocaleString()}</p>
   `;
   notification.appendChild(metaInfo);
-  
-  // Add enhanced data if available
-  if (enhancedData) {
-    const enhancedSection = document.createElement('div');
-    enhancedSection.style.marginTop = '15px';
-    enhancedSection.style.padding = '10px';
-    enhancedSection.style.backgroundColor = '#f8f9fa';
-    enhancedSection.style.borderRadius = '4px';
-    
-    const enhancedTitle = document.createElement('h4');
-    enhancedTitle.textContent = 'Enhanced Analysis';
-    enhancedTitle.style.margin = '0 0 10px 0';
-    enhancedTitle.style.color = '#28a745';
-    enhancedSection.appendChild(enhancedTitle);
-    
-    const enhancedContent = document.createElement('div');
-    enhancedContent.innerHTML = enhancedData;
-    enhancedSection.appendChild(enhancedContent);
-    
-    notification.appendChild(enhancedSection);
-  }
   
   // Add data based on type
   const content = document.createElement('div');
